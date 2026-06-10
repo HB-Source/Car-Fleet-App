@@ -62,19 +62,16 @@ npm run preview  # preview the production build
 
 ## 📦 Deployment (GitHub Actions → GitHub Pages)
 
-The workflow at [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) runs on every push to `main`: it installs dependencies, lints, tests, builds and deploys to GitHub Pages, then prints the **live deployment URL** in the workflow summary (also shown on the repo's `github-pages` environment).
+The workflow at [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) runs on every push to `main`: it installs dependencies, lints, tests, builds and publishes the production build to the `gh-pages` branch, then prints the **live deployment URL** in the workflow summary. GitHub Pages is enabled automatically when the `gh-pages` branch is first created — no manual repository setup is required (the repo just needs to be public, or on a plan that supports private Pages).
 
-One-time repository setup:
+Optional setup — connect a live backend via **Settings → Secrets and variables → Actions**:
 
-1. **Settings → Pages → Source**: select **GitHub Actions**.
-2. **Settings → Secrets and variables → Actions → New repository secret**:
-   - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_ANON_KEY`
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
 
-   (Optional — without them the deployed app runs in demo mode.)
-3. Push to `main` (or trigger **Build & Deploy** manually via *Actions → Run workflow*).
+Without these secrets the deployed app runs in demo mode.
 
-The app is then live at `https://<your-username>.github.io/<repo-name>/`.
+Push to `main` (or trigger **Build & Deploy** manually via *Actions → Run workflow*) and the app goes live at `https://<your-username>.github.io/<repo-name>/`.
 
 ## 🗄️ Database Schema
 
