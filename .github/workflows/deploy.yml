@@ -8,9 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 # Allow only one deployment at a time, but don't cancel in-progress runs.
 concurrency:
@@ -18,8 +16,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
-    name: Lint, test & build
+  build-and-deploy:
+    name: Lint, test, build & deploy
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -48,31 +46,19 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
+      # Publishing to the gh-pages branch auto-enables GitHub Pages,
+      # so no manual repository configuration is needed.
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          # Enable GitHub Pages automatically on first run if it isn't yet.
-          enablement: true
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: dist
-
-  deploy:
-    name: Deploy to GitHub Pages
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy
-        id: deployment
-        uses: actions/deploy-pages@v4
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
 
       - name: Publish deployment URL
         run: |
+          OWNER="${{ github.repository_owner }}"
+          REPO="${{ github.event.repository.name }}"
+          URL="https://${OWNER,,}.github.io/${REPO}/"
           echo "### 🚀 Deployed" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Live app: ${{ steps.deployment.outputs.page_url }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Live app: ${URL}" >> "$GITHUB_STEP_SUMMARY"
