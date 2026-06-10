@@ -1,0 +1,96 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+.dark {
+  color-scheme: dark;
+}
+
+html,
+body {
+  @apply bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 antialiased;
+  overscroll-behavior-y: none;
+}
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Safe-area padding for notched devices */
+.pb-safe {
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+}
+
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+
+/* Skeleton shimmer */
+.skeleton {
+  @apply bg-slate-200 dark:bg-slate-800 rounded-lg;
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.35) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
+.dark .skeleton {
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.06) 50%,
+    transparent 100%
+  );
+}
+
+/* Leaflet tweaks for mobile + dark mode */
+.leaflet-container {
+  width: 100%;
+  height: 100%;
+  font-family: inherit;
+  background: #e2e8f0;
+}
+
+.dark .leaflet-container {
+  background: #0f172a;
+}
+
+.dark .leaflet-tile {
+  filter: brightness(0.7) invert(1) contrast(3) hue-rotate(200deg) saturate(0.4) brightness(0.8);
+}
+
+.leaflet-popup-content-wrapper {
+  @apply rounded-2xl shadow-xl dark:bg-slate-900 dark:text-slate-100;
+}
+
+.leaflet-popup-tip {
+  @apply dark:bg-slate-900;
+}
+
+.leaflet-popup-content {
+  margin: 12px 14px;
+}
+
+/* QR scanner video fills its container */
+#qr-reader video {
+  border-radius: 1.25rem;
+  object-fit: cover;
+}
+
+/* Hide scrollbars on horizontal chip rows */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
