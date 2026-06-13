@@ -12,6 +12,12 @@ const envSchema = z.object({
   SEED_ADMIN_EMAIL: z.string().email().default('admin@fleetpilot.demo'),
   SEED_ADMIN_PASSWORD: z.string().min(8).default('ChangeMe123!'),
   SEED_DRIVER_PASSWORD: z.string().min(8).default('Driver123!'),
+  // When true, the server runs the (idempotent) seed on startup. Handy for
+  // a hosted first deploy so the database is populated automatically.
+  SEED_ON_START: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
 });
 
 const parsed = envSchema.safeParse(process.env);
