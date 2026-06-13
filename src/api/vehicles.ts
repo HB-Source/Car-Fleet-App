@@ -1,11 +1,11 @@
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { apiRequest, ApiRequestError, isApiConfigured } from './client';
 import { loadDemoVehicles, saveDemoVehicles } from '../lib/demoData';
-import type { Vehicle, VehicleUpdate } from '../types/vehicle';
+import type { Vehicle, VehicleHistoryEntry, VehicleUpdate } from '../types/vehicle';
 
-const TABLE = 'vehicles';
+const POLL_INTERVAL_MS = 15_000;
 
 export async function fetchVehicles(): Promise<Vehicle[]> {
-  if (!isSupabaseConfigured || !supabase) {
+  if (!isApiConfigured) {
     // Simulate network latency so loading states are visible in demo mode.
     await new Promise((r) => setTimeout(r, 400));
     return loadDemoVehicles().sort(
@@ -13,48 +13,44 @@ export async function fetchVehicles(): Promise<Vehicle[]> {
     );
   }
 
-  const { data, error } = await supabase
-    .from(TABLE)
-    .select('*')
-    .order('last_updated', { ascending: false });
-
-  if (error) throw new Error(error.message);
-  return (data ?? []) as Vehicle[];
+  const res = await apiRequest<{ data: Vehicle[] }>('/api/vehicles?limit=200');
+  return res.data;
 }
 
 export async function fetchVehicleById(id: string): Promise<Vehicle | null> {
-  if (!isSupabaseConfigured || !supabase) {
+  if (!isApiConfigured) {
     await new Promise((r) => setTimeout(r, 250));
     return loadDemoVehicles().find((v) => v.id === id) ?? null;
   }
 
-  const { data, error } = await supabase.from(TABLE).select('*').eq('id', id).maybeSingle();
-  if (error) throw new Error(error.message);
-  return data as Vehicle | null;
+  try {
+    const res = await apiRequest<{ vehicle: Vehicle }>(`/api/vehicles/${id}`);
+    return res.vehicle;
+  } catch (e) {
+    if (e instanceof ApiRequestError && e.status === 404) return null;
+    throw e;
+  }
 }
 
 export async function updateVehicle(id: string, changes: VehicleUpdate): Promise<Vehicle> {
-  const patch = { ...changes, last_updated: new Date().toISOString() };
-
-  if (!isSupabaseConfigured || !supabase) {
+  if (!isApiConfigured) {
     await new Promise((r) => setTimeout(r, 300));
     const vehicles = loadDemoVehicles();
     const index = vehicles.findIndex((v) => v.id === id);
     if (index === -1) throw new Error('Vehicle not found');
-    vehicles[index] = { ...vehicles[index], ...patch };
+    vehicles[index] = { ...vehicles[index], ...changes, last_updated: new Date().toISOString() };
     saveDemoVehicles(vehicles);
     return vehicles[index];
   }
 
-  const { data, error } = await supabase
-    .from(TABLE)
-    .update(patch)
-    .eq('id', id)
-    .select()
-    .single();
-
-  if (error) throw new Error(error.message);
-  return data as Vehicle;
+  // The API derives the display name from the assigned driver reference.
+  const payload = { ...changes };
+  delete payload.driver;
+  const res = await apiRequest<{ vehicle: Vehicle }>(`/api/vehicles/${id}`, {
+    method: 'PATCH',
+    body: payload,
+  });
+  return res.vehicle;
 }
 
 /**
@@ -66,7 +62,7 @@ export async function onboardVehicleByQrCode(qrCodeId: string): Promise<Vehicle 
   const code = qrCodeId.trim();
   if (!code) return null;
 
-  if (!isSupabaseConfigured || !supabase) {
+  if (!isApiConfigured) {
     await new Promise((r) => setTimeout(r, 500));
     const vehicles = loadDemoVehicles();
     const index = vehicles.findIndex(
@@ -83,44 +79,40 @@ export async function onboardVehicleByQrCode(qrCodeId: string): Promise<Vehicle 
     return vehicles[index];
   }
 
-  const { data, error } = await supabase
-    .from(TABLE)
-    .select('*')
-    .ilike('qr_code_id', code)
-    .maybeSingle();
+  try {
+    const res = await apiRequest<{ vehicle: Vehicle }>('/api/vehicles/onboard', {
+      method: 'POST',
+      body: { qr_code_id: code },
+    });
+    return res.vehicle;
+  } catch (e) {
+    if (e instanceof ApiRequestError && e.status === 404) return null;
+    throw e;
+  }
+}
 
-  if (error) throw new Error(error.message);
-  if (!data) return null;
-
-  const vehicle = data as Vehicle;
-  const { data: updated, error: updateError } = await supabase
-    .from(TABLE)
-    .update({
-      active: true,
-      status: vehicle.status === 'offline' ? 'available' : vehicle.status,
-      last_updated: new Date().toISOString(),
-    })
-    .eq('id', vehicle.id)
-    .select()
-    .single();
-
-  if (updateError) throw new Error(updateError.message);
-  return updated as Vehicle;
+/** Status/mileage change timeline. Only available in API mode. */
+export async function fetchVehicleHistory(id: string): Promise<VehicleHistoryEntry[]> {
+  if (!isApiConfigured) return [];
+  const res = await apiRequest<{ data: VehicleHistoryEntry[] }>(`/api/vehicles/${id}/history`);
+  return res.data;
 }
 
 /**
- * Subscribe to realtime changes on the vehicles table. Returns an
- * unsubscribe function. No-op in demo mode.
+ * Subscribe to vehicle changes. In API mode this polls every 15 seconds and
+ * refetches when the tab regains focus. Returns an unsubscribe function.
  */
 export function subscribeToVehicles(onChange: () => void): () => void {
-  if (!isSupabaseConfigured || !supabase) return () => {};
+  if (!isApiConfigured) return () => {};
 
-  const channel = supabase
-    .channel('vehicles-realtime')
-    .on('postgres_changes', { event: '*', schema: 'public', table: TABLE }, onChange)
-    .subscribe();
+  const interval = setInterval(onChange, POLL_INTERVAL_MS);
+  const onVisible = () => {
+    if (document.visibilityState === 'visible') onChange();
+  };
+  document.addEventListener('visibilitychange', onVisible);
 
   return () => {
-    supabase?.removeChannel(channel);
+    clearInterval(interval);
+    document.removeEventListener('visibilitychange', onVisible);
   };
 }

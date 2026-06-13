@@ -17,5 +17,7 @@ export default defineConfig({
     globals: true,
     setupFiles: './src/test/setup.ts',
     css: false,
+    // The backend has its own vitest config in server/.
+    include: ['src/**/*.test.{ts,tsx}'],
   },
 });

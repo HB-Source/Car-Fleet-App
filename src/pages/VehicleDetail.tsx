@@ -4,19 +4,28 @@ import {
   ArrowLeft,
   Car,
   Check,
+  Clock,
+  CalendarDays,
+  Gauge,
+  History,
   Loader2,
+  Lock,
   MapPin,
   QrCode,
-  CalendarDays,
-  Clock,
 } from 'lucide-react';
-import { fetchVehicleById, updateVehicle } from '../api/vehicles';
+import { fetchVehicleById, fetchVehicleHistory, updateVehicle } from '../api/vehicles';
+import { fetchUsers } from '../api/users';
+import { isApiConfigured } from '../api/client';
+import { useAuth } from '../context/AuthContext';
 import {
   STATUS_LABELS,
   VEHICLE_STATUSES,
   type Vehicle,
+  type VehicleHistoryEntry,
   type VehicleStatus,
+  type VehicleUpdate,
 } from '../types/vehicle';
+import type { User } from '../types/user';
 import { StatusBadge } from '../components/StatusBadge';
 import { ErrorState } from '../components/ErrorState';
 import { formatMileage, timeAgo } from '../utils/format';
@@ -26,6 +35,7 @@ interface FormState {
   plate_number: string;
   status: VehicleStatus;
   driver: string;
+  assigned_driver_id: string;
   mileage: string;
   location_id: string;
   latitude: string;
@@ -39,6 +49,7 @@ function toForm(v: Vehicle): FormState {
     plate_number: v.plate_number,
     status: v.status,
     driver: v.driver,
+    assigned_driver_id: v.assigned_driver_id ?? '',
     mileage: String(v.mileage),
     location_id: v.location_id,
     latitude: v.latitude !== null ? String(v.latitude) : '',
@@ -48,7 +59,7 @@ function toForm(v: Vehicle): FormState {
 }
 
 const inputClass =
-  'w-full rounded-2xl border-0 bg-slate-100 px-4 py-3 text-sm ring-1 ring-slate-900/5 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:bg-slate-800 dark:ring-white/10';
+  'w-full rounded-2xl border-0 bg-slate-100 px-4 py-3 text-sm ring-1 ring-slate-900/5 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-60 dark:bg-slate-800 dark:ring-white/10';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -64,12 +75,22 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 export function VehicleDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { user, isAdmin } = useAuth();
   const [vehicle, setVehicle] = useState<Vehicle | null>(null);
   const [form, setForm] = useState<FormState | null>(null);
+  const [drivers, setDrivers] = useState<User[]>([]);
+  const [history, setHistory] = useState<VehicleHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  // Drivers can edit operational fields on their own vehicle; admins edit everything.
+  const isOwnVehicle = Boolean(
+    vehicle?.assigned_driver_id && vehicle.assigned_driver_id === user?.id,
+  );
+  const canEditAll = isAdmin;
+  const canEditOperational = canEditAll || isOwnVehicle;
 
   useEffect(() => {
     let cancelled = false;
@@ -86,6 +107,16 @@ export function VehicleDetail() {
           setForm(toForm(v));
           setError(null);
         }
+        if (isApiConfigured) {
+          const [hist, driverList] = await Promise.all([
+            fetchVehicleHistory(id).catch(() => []),
+            isAdmin ? fetchUsers({ role: 'driver' }).catch(() => []) : Promise.resolve([]),
+          ]);
+          if (!cancelled) {
+            setHistory(hist);
+            setDrivers(driverList.filter((d) => d.active));
+          }
+        }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load vehicle');
       } finally {
@@ -96,7 +127,7 @@ export function VehicleDetail() {
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, isAdmin]);
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((f) => (f ? { ...f, [key]: value } : f));
@@ -108,20 +139,33 @@ export function VehicleDetail() {
     setSaving(true);
     setError(null);
     try {
-      const updated = await updateVehicle(vehicle.id, {
-        vehicle_name: form.vehicle_name.trim(),
-        plate_number: form.plate_number.trim(),
+      const operational: VehicleUpdate = {
         status: form.status,
-        driver: form.driver.trim() || 'Unassigned',
         mileage: Number.parseInt(form.mileage, 10) || 0,
         location_id: form.location_id.trim(),
         latitude: form.latitude.trim() === '' ? null : Number.parseFloat(form.latitude),
         longitude: form.longitude.trim() === '' ? null : Number.parseFloat(form.longitude),
         maintenance_notes: form.maintenance_notes.trim() || null,
-      });
+      };
+
+      const changes: VehicleUpdate = canEditAll
+        ? {
+            ...operational,
+            vehicle_name: form.vehicle_name.trim(),
+            plate_number: form.plate_number.trim(),
+            ...(isApiConfigured
+              ? { assigned_driver_id: form.assigned_driver_id || null }
+              : { driver: form.driver.trim() || 'Unassigned' }),
+          }
+        : operational;
+
+      const updated = await updateVehicle(vehicle.id, changes);
       setVehicle(updated);
       setForm(toForm(updated));
       setSaved(true);
+      if (isApiConfigured) {
+        fetchVehicleHistory(vehicle.id).then(setHistory).catch(() => {});
+      }
       setTimeout(() => setSaved(false), 2500);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save changes');
@@ -211,125 +255,201 @@ export function VehicleDetail() {
           </dl>
         </section>
 
-        {/* Edit form */}
+        {/* Edit form / read-only notice */}
         <section
           className="animate-slide-up rounded-3xl bg-white p-4 shadow-sm ring-1 ring-slate-900/5 dark:bg-slate-900 dark:ring-white/10"
           style={{ animationDelay: '60ms' }}
         >
-          <h2 className="text-sm font-bold">Manage vehicle</h2>
-          <div className="mt-3 space-y-3.5">
-            <Field label="Vehicle name">
-              <input
-                className={inputClass}
-                value={form.vehicle_name}
-                onChange={(e) => set('vehicle_name', e.target.value)}
-              />
-            </Field>
-            <Field label="Plate number">
-              <input
-                className={inputClass}
-                value={form.plate_number}
-                onChange={(e) => set('plate_number', e.target.value)}
-              />
-            </Field>
-            <Field label="Status">
-              <div className="grid grid-cols-2 gap-2">
-                {VEHICLE_STATUSES.map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => set('status', s)}
-                    className={`rounded-2xl px-3 py-2.5 text-sm font-semibold transition-all active:scale-95 ${
-                      form.status === s
-                        ? 'bg-gradient-to-r from-brand-600 to-purple-600 text-white shadow-md shadow-brand-500/25'
-                        : 'bg-slate-100 text-slate-600 ring-1 ring-slate-900/5 dark:bg-slate-800 dark:text-slate-300 dark:ring-white/10'
-                    }`}
-                  >
-                    {STATUS_LABELS[s]}
-                  </button>
-                ))}
-              </div>
-            </Field>
-            <Field label="Assigned driver">
-              <input
-                className={inputClass}
-                value={form.driver}
-                onChange={(e) => set('driver', e.target.value)}
-                placeholder="Unassigned"
-              />
-            </Field>
-            <Field label="Mileage (km)">
-              <input
-                className={inputClass}
-                type="number"
-                inputMode="numeric"
-                value={form.mileage}
-                onChange={(e) => set('mileage', e.target.value)}
-              />
-            </Field>
-            <Field label="Location ID">
-              <input
-                className={inputClass}
-                value={form.location_id}
-                onChange={(e) => set('location_id', e.target.value)}
-              />
-            </Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Latitude">
-                <input
-                  className={inputClass}
-                  type="number"
-                  step="any"
-                  inputMode="decimal"
-                  value={form.latitude}
-                  onChange={(e) => set('latitude', e.target.value)}
-                />
-              </Field>
-              <Field label="Longitude">
-                <input
-                  className={inputClass}
-                  type="number"
-                  step="any"
-                  inputMode="decimal"
-                  value={form.longitude}
-                  onChange={(e) => set('longitude', e.target.value)}
-                />
-              </Field>
-            </div>
-            <Field label="Maintenance notes">
-              <textarea
-                className={`${inputClass} min-h-[88px] resize-y`}
-                value={form.maintenance_notes}
-                onChange={(e) => set('maintenance_notes', e.target.value)}
-                placeholder="No maintenance notes"
-              />
-            </Field>
-          </div>
+          <h2 className="flex items-center gap-2 text-sm font-bold">
+            Manage vehicle
+            {!canEditOperational && <Lock size={13} className="text-slate-400" />}
+          </h2>
 
-          {error && (
-            <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs font-medium text-red-600 dark:bg-red-500/10 dark:text-red-400">
-              {error}
+          {!canEditOperational ? (
+            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+              This vehicle is assigned to <span className="font-semibold">{vehicle.driver}</span>.
+              You can only edit vehicles assigned to you.
             </p>
-          )}
+          ) : (
+            <div className="mt-3 space-y-3.5">
+              <Field label="Vehicle name">
+                <input
+                  className={inputClass}
+                  value={form.vehicle_name}
+                  disabled={!canEditAll}
+                  onChange={(e) => set('vehicle_name', e.target.value)}
+                />
+              </Field>
+              <Field label="Plate number">
+                <input
+                  className={inputClass}
+                  value={form.plate_number}
+                  disabled={!canEditAll}
+                  onChange={(e) => set('plate_number', e.target.value)}
+                />
+              </Field>
+              <Field label="Status">
+                <div className="grid grid-cols-2 gap-2">
+                  {VEHICLE_STATUSES.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => set('status', s)}
+                      className={`rounded-2xl px-3 py-2.5 text-sm font-semibold transition-all active:scale-95 ${
+                        form.status === s
+                          ? 'bg-gradient-to-r from-brand-600 to-purple-600 text-white shadow-md shadow-brand-500/25'
+                          : 'bg-slate-100 text-slate-600 ring-1 ring-slate-900/5 dark:bg-slate-800 dark:text-slate-300 dark:ring-white/10'
+                      }`}
+                    >
+                      {STATUS_LABELS[s]}
+                    </button>
+                  ))}
+                </div>
+              </Field>
 
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-brand-600 to-purple-600 py-3.5 text-sm font-bold text-white shadow-lg shadow-brand-500/25 transition-all active:scale-[0.98] disabled:opacity-60"
-          >
-            {saving ? (
-              <>
-                <Loader2 size={16} className="animate-spin" /> Saving…
-              </>
-            ) : saved ? (
-              <>
-                <Check size={16} /> Saved
-              </>
-            ) : (
-              'Save changes'
-            )}
-          </button>
+              {canEditAll &&
+                (isApiConfigured ? (
+                  <Field label="Assigned driver">
+                    <select
+                      className={inputClass}
+                      value={form.assigned_driver_id}
+                      onChange={(e) => set('assigned_driver_id', e.target.value)}
+                    >
+                      <option value="">Unassigned</option>
+                      {drivers.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name} ({d.email})
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                ) : (
+                  <Field label="Assigned driver">
+                    <input
+                      className={inputClass}
+                      value={form.driver}
+                      onChange={(e) => set('driver', e.target.value)}
+                      placeholder="Unassigned"
+                    />
+                  </Field>
+                ))}
+
+              <Field label="Mileage (km)">
+                <input
+                  className={inputClass}
+                  type="number"
+                  inputMode="numeric"
+                  value={form.mileage}
+                  onChange={(e) => set('mileage', e.target.value)}
+                />
+              </Field>
+              <Field label="Location ID">
+                <input
+                  className={inputClass}
+                  value={form.location_id}
+                  onChange={(e) => set('location_id', e.target.value)}
+                />
+              </Field>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Latitude">
+                  <input
+                    className={inputClass}
+                    type="number"
+                    step="any"
+                    inputMode="decimal"
+                    value={form.latitude}
+                    onChange={(e) => set('latitude', e.target.value)}
+                  />
+                </Field>
+                <Field label="Longitude">
+                  <input
+                    className={inputClass}
+                    type="number"
+                    step="any"
+                    inputMode="decimal"
+                    value={form.longitude}
+                    onChange={(e) => set('longitude', e.target.value)}
+                  />
+                </Field>
+              </div>
+              <Field label="Maintenance notes">
+                <textarea
+                  className={`${inputClass} min-h-[88px] resize-y`}
+                  value={form.maintenance_notes}
+                  onChange={(e) => set('maintenance_notes', e.target.value)}
+                  placeholder="No maintenance notes"
+                />
+              </Field>
+
+              {error && (
+                <p className="rounded-xl bg-red-50 px-3 py-2 text-xs font-medium text-red-600 dark:bg-red-500/10 dark:text-red-400">
+                  {error}
+                </p>
+              )}
+
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-brand-600 to-purple-600 py-3.5 text-sm font-bold text-white shadow-lg shadow-brand-500/25 transition-all active:scale-[0.98] disabled:opacity-60"
+              >
+                {saving ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" /> Saving…
+                  </>
+                ) : saved ? (
+                  <>
+                    <Check size={16} /> Saved
+                  </>
+                ) : (
+                  'Save changes'
+                )}
+              </button>
+            </div>
+          )}
         </section>
+
+        {/* History timeline (API mode) */}
+        {isApiConfigured && history.length > 0 && (
+          <section
+            className="animate-slide-up rounded-3xl bg-white p-4 shadow-sm ring-1 ring-slate-900/5 dark:bg-slate-900 dark:ring-white/10"
+            style={{ animationDelay: '90ms' }}
+          >
+            <h2 className="flex items-center gap-2 text-sm font-bold">
+              <History size={15} className="text-slate-400" /> Recent changes
+            </h2>
+            <ul className="mt-3 space-y-2.5">
+              {history.slice(0, 10).map((h) => (
+                <li key={h.id} className="flex items-start gap-2.5 text-sm">
+                  <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-400 dark:bg-slate-800">
+                    {h.field === 'mileage' ? <Gauge size={14} /> : <Clock size={14} />}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-slate-700 dark:text-slate-200">
+                      {h.field === 'mileage' ? (
+                        <>
+                          Mileage {formatMileage(Number(h.old_value) || 0)} →{' '}
+                          <span className="font-semibold">
+                            {formatMileage(Number(h.new_value) || 0)}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          Status {STATUS_LABELS[h.old_value as VehicleStatus] ?? h.old_value} →{' '}
+                          <span className="font-semibold">
+                            {STATUS_LABELS[h.new_value as VehicleStatus] ?? h.new_value}
+                          </span>
+                        </>
+                      )}
+                    </p>
+                    <p className="text-xs text-slate-400">
+                      {h.changed_by ?? 'Unknown'} · {timeAgo(h.recorded_at)}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         {/* Map shortcut */}
         {vehicle.latitude !== null && vehicle.longitude !== null && (

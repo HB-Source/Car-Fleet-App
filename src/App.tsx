@@ -1,11 +1,16 @@
 import { lazy, Suspense } from 'react';
-import { HashRouter, Route, Routes } from 'react-router-dom';
+import { HashRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { ThemeProvider } from './context/ThemeContext';
+import { AuthProvider } from './context/AuthContext';
 import { BottomNav } from './components/BottomNav';
+import { RequireAuth } from './components/RequireAuth';
 import { Dashboard } from './pages/Dashboard';
 import { VehicleDetail } from './pages/VehicleDetail';
 import { Settings } from './pages/Settings';
+import { Login } from './pages/Login';
+import { Register } from './pages/Register';
+import { Users } from './pages/Users';
 
 // Map and QR scanner pull in heavy libraries (leaflet, html5-qrcode) —
 // lazy-load them so the dashboard stays fast on mobile connections.
@@ -22,23 +27,81 @@ function PageLoader() {
   );
 }
 
+function Shell() {
+  const location = useLocation();
+  const isAuthPage = location.pathname === '/login' || location.pathname === '/register';
+
+  return (
+    <>
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route
+            path="/"
+            element={
+              <RequireAuth>
+                <Dashboard />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/vehicles/:id"
+            element={
+              <RequireAuth>
+                <VehicleDetail />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/onboard"
+            element={
+              <RequireAuth>
+                <QROnboarding />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/map"
+            element={
+              <RequireAuth>
+                <MapView />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <RequireAuth>
+                <Settings />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/users"
+            element={
+              <RequireAuth adminOnly>
+                <Users />
+              </RequireAuth>
+            }
+          />
+        </Routes>
+      </Suspense>
+      {!isAuthPage && <BottomNav />}
+    </>
+  );
+}
+
 // HashRouter keeps client-side routing working on static hosts like
 // GitHub Pages, where deep links would otherwise 404.
 export default function App() {
   return (
     <ThemeProvider>
-      <HashRouter>
-        <Suspense fallback={<PageLoader />}>
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/vehicles/:id" element={<VehicleDetail />} />
-            <Route path="/onboard" element={<QROnboarding />} />
-            <Route path="/map" element={<MapView />} />
-            <Route path="/settings" element={<Settings />} />
-          </Routes>
-        </Suspense>
-        <BottomNav />
-      </HashRouter>
+      <AuthProvider>
+        <HashRouter>
+          <Shell />
+        </HashRouter>
+      </AuthProvider>
     </ThemeProvider>
   );
 }
