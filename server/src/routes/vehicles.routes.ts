@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/authenticate.js';
 import { requireRole } from '../middleware/requireRole.js';
+import { requireVerifiedEmail } from '../middleware/requireVerifiedEmail.js';
+import { requireMfaVerified } from '../middleware/requireMfaVerified.js';
 import { validateBody } from '../middleware/validate.js';
 import {
   createVehicleSchema,
@@ -14,7 +16,8 @@ import { serializeHistory, serializeVehicle } from '../utils/serialize.js';
 
 export const vehiclesRouter = Router();
 
-vehiclesRouter.use(authenticate);
+// Every fleet route requires a verified, MFA-satisfied session.
+vehiclesRouter.use(authenticate, requireVerifiedEmail, requireMfaVerified);
 
 vehiclesRouter.get('/', async (req, res) => {
   const params = listVehiclesQuerySchema.parse(req.query);
@@ -27,7 +30,7 @@ vehiclesRouter.get('/', async (req, res) => {
 
 vehiclesRouter.post(
   '/',
-  requireRole('admin'),
+  requireRole('admin', 'manager'),
   validateBody(createVehicleSchema),
   async (req, res) => {
     const vehicle = await vehiclesService.createVehicle(req.body);

@@ -11,6 +11,11 @@ import { Settings } from './pages/Settings';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { Users } from './pages/Users';
+import { EmailOtpVerification } from './pages/EmailOtpVerification';
+import { MfaVerification } from './pages/MfaVerification';
+import { MfaSetup } from './pages/MfaSetup';
+import { BackupCodes } from './pages/BackupCodes';
+import { ForgotPassword } from './pages/ForgotPassword';
 
 // Map and QR scanner pull in heavy libraries (leaflet, html5-qrcode) —
 // lazy-load them so the dashboard stays fast on mobile connections.
@@ -18,6 +23,8 @@ const MapView = lazy(() => import('./pages/MapView').then((m) => ({ default: m.M
 const QROnboarding = lazy(() =>
   import('./pages/QROnboarding').then((m) => ({ default: m.QROnboarding })),
 );
+
+const AUTH_PATHS = ['/login', '/register', '/verify-otp', '/verify-mfa', '/forgot-password'];
 
 function PageLoader() {
   return (
@@ -29,14 +36,20 @@ function PageLoader() {
 
 function Shell() {
   const location = useLocation();
-  const isAuthPage = location.pathname === '/login' || location.pathname === '/register';
+  const hideNav = AUTH_PATHS.includes(location.pathname);
 
   return (
     <>
       <Suspense fallback={<PageLoader />}>
         <Routes>
+          {/* Public auth flow */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/verify-otp" element={<EmailOtpVerification />} />
+          <Route path="/verify-mfa" element={<MfaVerification />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+
+          {/* Protected app */}
           <Route
             path="/"
             element={
@@ -78,6 +91,22 @@ function Shell() {
             }
           />
           <Route
+            path="/security/mfa"
+            element={
+              <RequireAuth>
+                <MfaSetup />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/security/backup-codes"
+            element={
+              <RequireAuth>
+                <BackupCodes />
+              </RequireAuth>
+            }
+          />
+          <Route
             path="/users"
             element={
               <RequireAuth adminOnly>
@@ -87,7 +116,7 @@ function Shell() {
           />
         </Routes>
       </Suspense>
-      {!isAuthPage && <BottomNav />}
+      {!hideNav && <BottomNav />}
     </>
   );
 }

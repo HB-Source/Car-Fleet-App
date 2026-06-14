@@ -9,6 +9,9 @@ export interface UserJson {
   name: string;
   role: string;
   active: boolean;
+  emailVerified: boolean;
+  mfaEnabled: boolean;
+  lastLoginAt: string | null;
   created_at: string;
 }
 
@@ -19,6 +22,9 @@ export function serializeUser(user: UserDoc): UserJson {
     name: user.name,
     role: user.role,
     active: user.active,
+    emailVerified: user.emailVerified,
+    mfaEnabled: user.mfaEnabled,
+    lastLoginAt: user.lastLoginAt ? user.lastLoginAt.toISOString() : null,
     created_at: user.createdAt.toISOString(),
   };
 }

@@ -113,6 +113,7 @@ export async function runSeed(): Promise<void> {
       name: 'Fleet Admin',
       role: 'admin',
       password_hash: await hashPassword(env.SEED_ADMIN_PASSWORD),
+      emailVerified: true,
     });
     console.log(`✔ Created admin ${adminEmail}`);
   } else {
@@ -129,6 +130,7 @@ export async function runSeed(): Promise<void> {
         name: d.name,
         role: 'driver',
         password_hash: await hashPassword(env.SEED_DRIVER_PASSWORD),
+        emailVerified: true,
       });
       console.log(`✔ Created driver ${d.email}`);
     } else {

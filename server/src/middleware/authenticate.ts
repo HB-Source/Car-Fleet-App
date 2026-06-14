@@ -1,11 +1,13 @@
 import type { NextFunction, Request, Response } from 'express';
 import { User, type UserDoc } from '../models/User.js';
 import { ApiError } from '../utils/ApiError.js';
-import { verifyToken } from '../utils/jwt.js';
+import { verifyAccessToken } from '../utils/jwt.js';
 
 declare module 'express-serve-static-core' {
   interface Request {
     user?: UserDoc;
+    /** Whether the presented access token satisfied MFA. */
+    authMfa?: boolean;
   }
 }
 
@@ -17,7 +19,7 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
 
   let payload;
   try {
-    payload = verifyToken(header.slice('Bearer '.length));
+    payload = verifyAccessToken(header.slice('Bearer '.length));
   } catch {
     throw ApiError.unauthorized('Invalid or expired token', 'invalid_token');
   }
@@ -28,5 +30,6 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
   }
 
   req.user = user;
+  req.authMfa = payload.mfa === true;
   next();
 }

@@ -1,11 +1,11 @@
-import { User, type UserDoc } from '../models/User.js';
+import { User, type UserDoc, type UserRole } from '../models/User.js';
 import { Vehicle } from '../models/Vehicle.js';
 import { ApiError } from '../utils/ApiError.js';
 import { hashPassword } from '../utils/password.js';
 import type { CreateUserInput, UpdateUserInput } from '../schemas/user.schema.js';
 
 interface ListUsersParams {
-  role?: 'admin' | 'driver';
+  role?: UserRole | string;
   active?: 'true' | 'false';
   q?: string;
   page: number;
@@ -41,7 +41,7 @@ export async function createUser(input: CreateUserInput): Promise<UserDoc> {
   return User.create({
     email: input.email,
     name: input.name,
-    role: input.role,
+    role: input.role as UserRole,
     password_hash: await hashPassword(input.password),
   });
 }
@@ -76,7 +76,7 @@ export async function updateUser(
   }
 
   if (input.name !== undefined) user.name = input.name;
-  if (input.role !== undefined) user.role = input.role;
+  if (input.role !== undefined) user.role = input.role as UserRole;
   if (input.active !== undefined) user.active = input.active;
   if (input.password !== undefined) user.password_hash = await hashPassword(input.password);
 

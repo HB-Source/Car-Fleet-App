@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/authenticate.js';
 import { requireRole } from '../middleware/requireRole.js';
+import { requireVerifiedEmail } from '../middleware/requireVerifiedEmail.js';
+import { requireMfaVerified } from '../middleware/requireMfaVerified.js';
 import { validateBody } from '../middleware/validate.js';
 import {
   createUserSchema,
@@ -13,7 +15,7 @@ import { serializeUser } from '../utils/serialize.js';
 
 export const usersRouter = Router();
 
-usersRouter.use(authenticate);
+usersRouter.use(authenticate, requireVerifiedEmail, requireMfaVerified);
 
 usersRouter.get('/', requireRole('admin'), async (req, res) => {
   const params = listUsersQuerySchema.parse(req.query);

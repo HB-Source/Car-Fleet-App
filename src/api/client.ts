@@ -1,4 +1,4 @@
-import { clearToken, getToken } from '../lib/authToken';
+import { clearToken, getRefreshToken, getToken, setTokens } from '../lib/authToken';
 
 const baseUrl = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, '');
 
@@ -22,8 +22,42 @@ export class ApiRequestError extends Error {
 interface RequestOptions {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   body?: unknown;
-  /** Skip the automatic redirect-to-login on 401 (used by auth endpoints). */
+  /** Skip the automatic refresh/redirect handling on 401 (auth endpoints). */
   skipAuthRedirect?: boolean;
+  /** Internal: prevents infinite refresh recursion. */
+  _isRetry?: boolean;
+}
+
+function extractError(payload: unknown, status: number): ApiRequestError {
+  const p = payload as
+    | { error?: { message?: string; code?: string }; message?: string }
+    | null;
+  // Fleet endpoints use { error: { message, code } }; auth endpoints use
+  // { success:false, message }.
+  const message = p?.error?.message ?? p?.message ?? `Request failed (${status})`;
+  const code = p?.error?.code ?? 'error';
+  return new ApiRequestError(status, message, code);
+}
+
+/** Attempt a token refresh once. Returns true on success. */
+async function tryRefresh(): Promise<boolean> {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken || !baseUrl) return false;
+  try {
+    const res = await fetch(`${baseUrl}/api/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken }),
+    });
+    if (!res.ok) return false;
+    const json = await res.json();
+    const data = json?.data;
+    if (!data?.accessToken) return false;
+    setTokens(data.accessToken, data.refreshToken);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -47,7 +81,11 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     throw new ApiRequestError(0, 'Cannot reach the server. Check your connection.', 'network');
   }
 
-  if (res.status === 401 && !options.skipAuthRedirect) {
+  // Transparently refresh an expired access token once, then retry.
+  if (res.status === 401 && !options.skipAuthRedirect && !options._isRetry) {
+    if (await tryRefresh()) {
+      return apiRequest<T>(path, { ...options, _isRetry: true });
+    }
     clearToken();
     window.location.hash = '#/login';
   }
@@ -62,12 +100,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   }
 
   if (!res.ok) {
-    const err = (payload as { error?: { message?: string; code?: string } } | null)?.error;
-    throw new ApiRequestError(
-      res.status,
-      err?.message ?? `Request failed (${res.status})`,
-      err?.code ?? 'error',
-    );
+    throw extractError(payload, res.status);
   }
 
   return payload as T;

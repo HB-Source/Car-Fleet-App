@@ -92,24 +92,48 @@ npm run lint && npm test && npm run build
 cd server && npm run lint && npm test && npm run build
 ```
 
-## 🔌 API Reference
+## 🔐 Authentication
 
-All routes are under `/api`. List endpoints return `{ data: [...], meta: { page, limit, total } }`.
-Authenticated routes require an `Authorization: Bearer <token>` header.
+FleetPilot uses **email-OTP login with optional TOTP MFA**:
+
+1. **Register** with name + email + password → a 6-digit code is emailed (via Resend).
+2. **Verify email** with the code → email is confirmed and you're signed in (the verification doubles as the first login).
+3. **Subsequent logins**: email + password → a fresh 6-digit login code is emailed → enter it to sign in.
+4. **Optional MFA**: enable an authenticator app (Google/Microsoft Authenticator, Authy, 1Password) from Settings. When enabled, login requires the email OTP **and** a TOTP code (or a single-use backup code).
+
+Tokens: a short-lived **access token (15m)** plus a **refresh token (7d)**, stored in `localStorage` and sent as `Authorization: Bearer <token>`. The client transparently refreshes expired access tokens. OTP and backup codes are bcrypt-hashed at rest; accounts lock for 15 min after 5 failed password attempts; login/OTP endpoints are rate-limited.
+
+### Auth endpoints
+
+Auth responses use the envelope `{ success, data, message }`.
+
+| Method | Path | Access | Purpose |
+|---|---|---|---|
+| POST | `/auth/register` | public | create account, email a verification code |
+| POST | `/auth/login` | public | password check → email an OTP (or prompt email verification) |
+| POST | `/auth/send-email-otp` | public | resend the current code (cooldown enforced) |
+| POST | `/auth/verify-email-otp` | public | verify the emailed code → tokens, or an MFA challenge |
+| POST | `/auth/mfa/setup` | authed | start TOTP setup → otpauth URL, QR image, backup codes |
+| POST | `/auth/mfa/verify` | authed (setup) / challenge (login) | enable MFA, or complete an MFA login |
+| POST | `/auth/mfa/disable` | authed | disable MFA (password confirmation) |
+| POST | `/auth/refresh` | public | exchange a refresh token for new tokens |
+| POST | `/auth/logout` | public | client discards tokens |
+| GET | `/auth/me` | authed | current user |
+
+### Fleet endpoints
+
+Under `/api`. List endpoints return `{ data: [...], meta: { page, limit, total } }`. All require a verified, MFA-satisfied session (`Authorization: Bearer <access token>`).
 
 | Method | Path | Access | Purpose |
 |---|---|---|---|
 | GET | `/health` | public | service + DB status |
-| POST | `/auth/register` | public | register (creates a **driver**) → `{ token, user }` |
-| POST | `/auth/login` | public | login → `{ token, user }` |
-| GET | `/auth/me` | authed | current user |
 | GET / POST | `/users` | admin | list / create users |
 | GET / PATCH / DELETE | `/users/:id` | admin (self may edit own name/password) | manage a user (delete = soft-deactivate) |
 | GET | `/vehicles` | authed | list (`?status&active&q&page&limit`) |
-| POST | `/vehicles` | admin | register a vehicle |
+| POST | `/vehicles` | admin / manager | register a vehicle |
 | GET | `/vehicles/:id` | authed | vehicle detail |
-| PATCH | `/vehicles/:id` | admin (all) · driver (own, operational fields) | update; logs status/mileage history |
-| DELETE | `/vehicles/:id` | admin | delete a vehicle |
+| PATCH | `/vehicles/:id` | admin / manager (all) · driver (own, operational fields) | update; logs status/mileage history |
+| DELETE | `/vehicles/:id` | admin / manager | delete a vehicle |
 | POST | `/vehicles/onboard` | authed | `{ qr_code_id }` → activate matching vehicle |
 | GET | `/vehicles/:id/history` | authed | status/mileage change timeline |
 
@@ -137,7 +161,7 @@ Authenticated routes require an `Authorization: Bearer <token>` header.
 }
 ```
 
-**users**: `email` (unique), `name`, `role` (`admin`|`driver`), `active`, hashed password.
+**users**: `name`, `email` (unique), `passwordHash`, `role` (`admin`|`manager`|`driver`|`viewer`), `active`, `emailVerified`, email-OTP fields (`emailOtpHash`, `emailOtpExpiresAt`, `emailOtpAttempts`, `emailOtpLastSentAt`), lockout fields (`failedLoginAttempts`, `accountLockedUntil`), MFA fields (`mfaEnabled`, `mfaSecret`, `mfaBackupCodesHash`), `lastLoginAt`. Sensitive fields are never selected by default and never returned to the client.
 **vehicle_history**: per-change record of `status`/`mileage` with the actor and timestamp.
 
 ## ☁️ Setting up MongoDB (Atlas free tier)
@@ -161,9 +185,10 @@ The API is host-agnostic (plain Node, plus a `Dockerfile`). A **Render Blueprint
 2. Render dashboard → **New → Blueprint** → connect this repo. Render reads `render.yaml` and creates the `fleetpilot-api` web service (root directory `server/`, health check `/api/health`).
 3. When prompted, fill in the env vars that aren't auto-generated:
    - `MONGODB_URI` — your Atlas string, **including the db name**, e.g. `mongodb+srv://USER:PASS@car-fleet.lhhsc7g.mongodb.net/fleetpilot?retryWrites=true&w=majority&appName=Car-Fleet`
+   - `RESEND_API_KEY` — from [resend.com](https://resend.com) (API Keys). Without it, OTP codes are written to the Render logs instead of emailed — fine for testing, not for real users. Also set `EMAIL_FROM` to a verified sender on your Resend domain.
    - `SEED_ADMIN_PASSWORD` and `SEED_DRIVER_PASSWORD` — choose strong values
-   - (`JWT_SECRET` is generated by Render; `CORS_ORIGINS` defaults to the GitHub Pages origin.)
-4. Deploy. On first boot, `SEED_ON_START=true` seeds the admin + demo fleet automatically (idempotent — safe on every restart). Your API is live at `https://fleetpilot-api.onrender.com` (health: `/api/health`).
+   - (`JWT_SECRET`/`JWT_REFRESH_SECRET` are generated by Render; `CORS_ORIGINS` defaults to the GitHub Pages origin.)
+4. Deploy. On first boot, `SEED_ON_START=true` seeds a verified admin + demo fleet automatically (idempotent — safe on every restart). Your API is live at `https://fleetpilot-api.onrender.com` (health: `/api/health`). The seeded admin is pre-verified, so it can log in with just the email OTP.
 5. Point the frontend at it: set the repository **variable** `VITE_API_URL` to your Render URL and re-run the Pages workflow.
 
 > Free Render web services sleep after ~15 min idle (30–60s cold start on the next request). Upgrade the plan or add an uptime pinger to keep it warm.
@@ -175,7 +200,7 @@ The API is host-agnostic (plain Node, plus a `Dockerfile`). A **Render Blueprint
 | **Railway** | ~$5/mo usage | Great DX, no sleeping, auto-deploy from GitHub (root dir `server/`). |
 | **Fly.io** | Pay-as-you-go | Docker-first (`server/Dockerfile`), regions worldwide, static IPs available. |
 
-**Required server env vars** (see `server/.env.example`): `MONGODB_URI`, `JWT_SECRET` (a long random string — `openssl rand -hex 32`), `CORS_ORIGINS` (e.g. `https://hb-source.github.io`), and the `SEED_*` values. If you don't use `SEED_ON_START`, run `npm run seed` once (host shell, or locally pointed at Atlas) to create the admin and demo data.
+**Required server env vars** (see `server/.env.example`): `MONGODB_URI`, `JWT_SECRET` + `JWT_REFRESH_SECRET` (long random strings — `openssl rand -hex 32`), `CORS_ORIGINS` (e.g. `https://hb-source.github.io`), `RESEND_API_KEY` + `EMAIL_FROM` (for real OTP email), and the `SEED_*` values. Optional: `JWT_EXPIRES_IN` (default `15m`), `JWT_REFRESH_EXPIRES_IN` (`7d`), `BCRYPT_SALT_ROUNDS` (`12`), `MFA_ISSUER` (`FleetPilot`), `CLIENT_URL`. If you don't use `SEED_ON_START`, run `npm run seed` once (host shell, or locally pointed at Atlas) to create the admin and demo data.
 
 ## 📦 Frontend Deployment (GitHub Actions → GitHub Pages)
 
@@ -190,5 +215,11 @@ The workflow at [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) r
 
 ## 🔐 Roles at a Glance
 
-- **Admin** — full CRUD on vehicles, assign drivers, manage users (create/promote/deactivate).
-- **Driver** — read all vehicles (needed for the map); update only **their own** assigned vehicle, and only operational fields (status, mileage, location, coordinates, maintenance notes). Public registration always creates drivers; admins are created via the seed script or by another admin.
+- **Admin** — full access: CRUD on vehicles, assign drivers, manage users (create/promote/deactivate).
+- **Manager** — manage the fleet (create / update / delete vehicles, assign drivers).
+- **Driver** — read all vehicles (needed for the map); update only **their own** assigned vehicle, and only operational fields (status, mileage, location, coordinates, maintenance notes).
+- **Viewer** — read-only access to the fleet.
+
+Public registration always creates drivers; elevated roles are assigned by an admin (Settings → Team). The roles enum is wired end-to-end, so granular per-role policies can be tightened further as needed.
+
+> **Future-ready:** the OTP layer is email-only by design. Phone/SMS OTP can be added later without reworking the flow — it would slot in as an additional delivery channel alongside the existing email service. SMS/Twilio is intentionally **not** implemented in this version.

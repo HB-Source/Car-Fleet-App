@@ -12,9 +12,9 @@ let driverId: string;
 
 beforeEach(async () => {
   adminToken = await createAdmin(app);
-  const { res } = await registerUser(app);
-  driverToken = res.body.token;
-  driverId = res.body.user.id;
+  const driver = await registerUser(app);
+  driverToken = driver.token;
+  driverId = driver.user.id;
 });
 
 describe('user management', () => {
@@ -102,7 +102,7 @@ describe('user management', () => {
   it('admin cannot delete their own account', async () => {
     const me = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${adminToken}`);
     const res = await request(app)
-      .delete(`/api/users/${me.body.user.id}`)
+      .delete(`/api/users/${me.body.data.user.id}`)
       .set('Authorization', `Bearer ${adminToken}`);
     expect(res.status).toBe(400);
   });

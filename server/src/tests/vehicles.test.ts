@@ -12,9 +12,9 @@ let driverId: string;
 
 beforeEach(async () => {
   adminToken = await createAdmin(app);
-  const { res } = await registerUser(app);
-  driverToken = res.body.token;
-  driverId = res.body.user.id;
+  const driver = await registerUser(app);
+  driverToken = driver.token;
+  driverId = driver.user.id;
 });
 
 async function createVehicle(overrides: Record<string, unknown> = {}) {

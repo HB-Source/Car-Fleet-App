@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   CarFront,
@@ -5,9 +6,12 @@ import {
   Database,
   Github,
   Info,
+  Loader2,
   LogOut,
   Moon,
+  ShieldAlert,
   ShieldCheck,
+  Smartphone,
   Sun,
   UserRound,
   UsersRound,
@@ -16,13 +20,33 @@ import { PageHeader } from '../components/PageHeader';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { isApiConfigured } from '../api/client';
+import { disableMfa } from '../api/auth';
 import { useVehicles } from '../hooks/useVehicles';
 import { VEHICLE_STATUSES, STATUS_LABELS } from '../types/vehicle';
 
 export function Settings() {
   const { theme, toggleTheme } = useTheme();
-  const { user, isAdmin, logout } = useAuth();
+  const { user, isAdmin, logout, refreshUser } = useAuth();
   const { vehicles } = useVehicles();
+  const [disablePassword, setDisablePassword] = useState('');
+  const [showDisable, setShowDisable] = useState(false);
+  const [mfaError, setMfaError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const handleDisableMfa = async () => {
+    setBusy(true);
+    setMfaError(null);
+    try {
+      await disableMfa(disablePassword);
+      await refreshUser();
+      setShowDisable(false);
+      setDisablePassword('');
+    } catch (err) {
+      setMfaError(err instanceof Error ? err.message : 'Could not disable MFA');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <div className="min-h-screen pb-28">
@@ -71,6 +95,70 @@ export function Settings() {
             </Link>
           )}
         </section>
+
+        {/* Security / MFA */}
+        {isApiConfigured && (
+          <section
+            className="animate-slide-up rounded-3xl bg-white p-4 shadow-sm ring-1 ring-slate-900/5 dark:bg-slate-900 dark:ring-white/10"
+            style={{ animationDelay: '25ms' }}
+          >
+            <h2 className="flex items-center gap-2 text-sm font-bold">
+              <Smartphone size={16} className="text-slate-400" /> Two-factor authentication
+            </h2>
+            <div className="mt-3 flex items-center justify-between rounded-2xl bg-slate-100 px-4 py-3.5 ring-1 ring-slate-900/5 dark:bg-slate-800 dark:ring-white/10">
+              <span className="flex items-center gap-2 text-sm font-medium">
+                {user?.mfaEnabled ? (
+                  <ShieldCheck size={18} className="text-emerald-500" />
+                ) : (
+                  <ShieldAlert size={18} className="text-amber-500" />
+                )}
+                {user?.mfaEnabled ? 'Enabled' : 'Not enabled'}
+              </span>
+              {user?.mfaEnabled ? (
+                <button
+                  onClick={() => {
+                    setShowDisable((s) => !s);
+                    setMfaError(null);
+                  }}
+                  className="rounded-xl bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 ring-1 ring-red-100 transition-transform active:scale-95 dark:bg-red-500/10 dark:text-red-400 dark:ring-red-500/20"
+                >
+                  Disable
+                </button>
+              ) : (
+                <Link
+                  to="/security/mfa"
+                  className="rounded-xl bg-gradient-to-r from-brand-600 to-purple-600 px-3 py-1.5 text-xs font-semibold text-white shadow-md shadow-brand-500/25 transition-transform active:scale-95"
+                >
+                  Enable
+                </Link>
+              )}
+            </div>
+
+            {showDisable && user?.mfaEnabled && (
+              <div className="mt-2.5 space-y-2">
+                <input
+                  type="password"
+                  value={disablePassword}
+                  onChange={(e) => setDisablePassword(e.target.value)}
+                  placeholder="Confirm your password to disable"
+                  className="w-full rounded-2xl border-0 bg-slate-100 px-4 py-3 text-sm ring-1 ring-slate-900/5 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:bg-slate-800 dark:ring-white/10"
+                />
+                <button
+                  onClick={handleDisableMfa}
+                  disabled={busy || disablePassword.length < 1}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-red-500 py-2.5 text-sm font-semibold text-white transition-transform active:scale-[0.98] disabled:opacity-60"
+                >
+                  {busy && <Loader2 size={14} className="animate-spin" />} Disable MFA
+                </button>
+              </div>
+            )}
+            {mfaError && (
+              <p className="mt-2 rounded-xl bg-red-50 px-3 py-2 text-xs font-medium text-red-600 dark:bg-red-500/10 dark:text-red-400">
+                {mfaError}
+              </p>
+            )}
+          </section>
+        )}
 
         {/* Appearance */}
         <section
