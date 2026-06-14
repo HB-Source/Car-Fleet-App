@@ -1,5 +1,6 @@
 import { Resend } from 'resend';
 import { env } from '../config/env.js';
+import { ApiError } from '../utils/ApiError.js';
 
 const resend = env.RESEND_API_KEY ? new Resend(env.RESEND_API_KEY) : null;
 
@@ -55,9 +56,23 @@ async function deliver(to: string, subject: string, html: string, code?: string)
     return;
   }
 
-  const { error } = await resend.emails.send({ from: env.EMAIL_FROM, to, subject, html });
-  if (error) {
-    throw new Error(`Failed to send email: ${error.message}`);
+  let sendError: unknown = null;
+  try {
+    const { error } = await resend.emails.send({ from: env.EMAIL_FROM, to, subject, html });
+    sendError = error;
+  } catch (err) {
+    sendError = err;
+  }
+  if (sendError) {
+    // Surface the precise Resend reason in the server logs (e.g. unverified
+    // sender domain, or onboarding@resend.dev only allowing your own address),
+    // while returning a clean, non-500 error to the client.
+    console.error('❌ Resend email failed:', JSON.stringify(sendError));
+    throw new ApiError(
+      502,
+      'We could not send the email. Please verify the email sender configuration and try again.',
+      'email_send_failed',
+    );
   }
 }
 
