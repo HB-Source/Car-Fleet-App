@@ -101,7 +101,8 @@ describe('login + login OTP', () => {
       .post('/api/auth/login')
       .send({ email: 'lock@test.dev', password: 'Password123!' });
     expect(locked.status).toBe(429);
-    expect(locked.body.message).toMatch(/locked/i);
+    // ApiError responses use the { error: { message, code } } shape.
+    expect(locked.body.error.message).toMatch(/locked/i);
   });
 });
 

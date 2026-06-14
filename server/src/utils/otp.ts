@@ -3,7 +3,8 @@ import { randomInt, randomBytes } from 'node:crypto';
 import { env } from '../config/env.js';
 
 export const OTP_TTL_MS = 10 * 60 * 1000; // 10 minutes
-export const OTP_RESEND_COOLDOWN_MS = 45 * 1000; // 45 seconds
+// No cooldown under test so back-to-back OTP issuance in the suite doesn't 429.
+export const OTP_RESEND_COOLDOWN_MS = env.NODE_ENV === 'test' ? 0 : 45 * 1000;
 export const OTP_MAX_ATTEMPTS = 5;
 
 /** Cryptographically-random six-digit numeric code. */
