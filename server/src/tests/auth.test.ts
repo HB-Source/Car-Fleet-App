@@ -127,6 +127,71 @@ describe('session endpoints', () => {
   });
 });
 
+describe('forgot / reset password', () => {
+  it('offers email-only for non-MFA accounts and resets via email OTP', async () => {
+    await createUserDoc({ email: 'r1@test.dev', password: 'Password123!', emailVerified: true });
+
+    const methods = await request(app).post('/api/auth/forgot-password').send({ email: 'r1@test.dev' });
+    expect(methods.status).toBe(200);
+    expect(methods.body.data.methods).toEqual(['email']);
+
+    await request(app).post('/api/auth/forgot-password/send-otp').send({ email: 'r1@test.dev' });
+    const code = lastOtpFor('r1@test.dev')!;
+
+    const wrong = await request(app)
+      .post('/api/auth/reset-password')
+      .send({ email: 'r1@test.dev', method: 'email', code: '000000', newPassword: 'NewPass123!' });
+    expect(wrong.status).toBe(400);
+
+    const reset = await request(app)
+      .post('/api/auth/reset-password')
+      .send({ email: 'r1@test.dev', method: 'email', code, newPassword: 'NewPass123!' });
+    expect(reset.status).toBe(200);
+
+    // New password works; old one doesn't.
+    const good = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'r1@test.dev', password: 'NewPass123!' });
+    expect(good.body.data.requiresOtp).toBe(true);
+    const old = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'r1@test.dev', password: 'Password123!' });
+    expect(old.status).toBe(401);
+  });
+
+  it('offers MFA and resets via an authenticator code', async () => {
+    const { token } = await registerUser(app, { email: 'r2@test.dev' });
+    const setup = await request(app).post('/api/auth/mfa/setup').set('Authorization', `Bearer ${token}`);
+    const secret = secretFromOtpauth(setup.body.data.otpauthUrl);
+    await request(app)
+      .post('/api/auth/mfa/verify')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ code: authenticator.generate(secret) });
+
+    const methods = await request(app).post('/api/auth/forgot-password').send({ email: 'r2@test.dev' });
+    expect(methods.body.data.methods).toEqual(['email', 'mfa']);
+
+    const reset = await request(app).post('/api/auth/reset-password').send({
+      email: 'r2@test.dev',
+      method: 'mfa',
+      code: authenticator.generate(secret),
+      newPassword: 'NewPass123!',
+    });
+    expect(reset.status).toBe(200);
+
+    const login = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'r2@test.dev', password: 'NewPass123!' });
+    expect(login.body.data.requiresMfa).toBe(true);
+  });
+
+  it('does not reveal whether an account exists', async () => {
+    const res = await request(app).post('/api/auth/forgot-password').send({ email: 'ghost@test.dev' });
+    expect(res.status).toBe(200);
+    expect(res.body.data.methods).toEqual(['email']);
+  });
+});
+
 describe('MFA (TOTP)', () => {
   it('sets up, enables, and enforces MFA at login (TOTP and backup code)', async () => {
     const { token } = await registerUser(app, { email: 'mfa@test.dev' });

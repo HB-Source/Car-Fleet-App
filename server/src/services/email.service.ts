@@ -26,12 +26,23 @@ export function lastOtpFor(email: string): string | undefined {
   return undefined;
 }
 
-function otpEmailHtml(name: string, code: string, purpose: 'verify' | 'login'): string {
-  const heading = purpose === 'verify' ? 'Verify your email' : 'Your login code';
-  const intro =
-    purpose === 'verify'
-      ? 'Use the code below to verify your FleetPilot account.'
-      : 'Use the code below to finish signing in to FleetPilot.';
+type OtpPurpose = 'verify' | 'login' | 'reset';
+
+const OTP_HEADINGS: Record<OtpPurpose, string> = {
+  verify: 'Verify your email',
+  login: 'Your login code',
+  reset: 'Reset your password',
+};
+
+const OTP_INTROS: Record<OtpPurpose, string> = {
+  verify: 'Use the code below to verify your FleetPilot account.',
+  login: 'Use the code below to finish signing in to FleetPilot.',
+  reset: 'Use the code below to reset your FleetPilot password.',
+};
+
+function otpEmailHtml(name: string, code: string, purpose: OtpPurpose): string {
+  const heading = OTP_HEADINGS[purpose];
+  const intro = OTP_INTROS[purpose];
   return `
   <div style="font-family:Inter,system-ui,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#0f172a">
     <h1 style="font-size:20px;margin:0 0 4px">${heading}</h1>
@@ -76,13 +87,21 @@ async function deliver(to: string, subject: string, html: string, code?: string)
   }
 }
 
+const OTP_SUBJECTS: Record<OtpPurpose, string> = {
+  verify: 'Verify your FleetPilot email',
+  login: 'Your FleetPilot login code',
+  reset: 'Reset your FleetPilot password',
+};
+
 export function sendOtpEmail(
   to: string,
   name: string,
   code: string,
-  purpose: 'verify' | 'login',
+  purpose: OtpPurpose,
 ): Promise<void> {
-  const subject =
-    purpose === 'verify' ? 'Verify your FleetPilot email' : 'Your FleetPilot login code';
-  return deliver(to, subject, otpEmailHtml(name, code, purpose), code);
+  return deliver(to, subject(purpose), otpEmailHtml(name, code, purpose), code);
+}
+
+function subject(purpose: OtpPurpose): string {
+  return OTP_SUBJECTS[purpose];
 }

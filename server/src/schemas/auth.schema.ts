@@ -30,5 +30,15 @@ export const mfaDisableSchema = z.object({ password });
 
 export const refreshSchema = z.object({ refreshToken: z.string().min(1) });
 
+export const forgotPasswordSchema = z.object({ email });
+
+export const resetPasswordSchema = z.object({
+  email,
+  method: z.enum(['email', 'mfa']),
+  // 6-digit email/TOTP code, or a backup recovery code.
+  code: z.string().trim().min(1).max(20),
+  newPassword: password,
+});
+
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;

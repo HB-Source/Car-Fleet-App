@@ -5,7 +5,7 @@ export type UserRole = 'admin' | 'manager' | 'driver' | 'viewer';
 export const USER_ROLES: UserRole[] = ['admin', 'manager', 'driver', 'viewer'];
 
 /** Purpose of the currently-stored email OTP. */
-export type EmailOtpPurpose = 'verify' | 'login';
+export type EmailOtpPurpose = 'verify' | 'login' | 'reset';
 
 export interface UserDoc extends Document<Types.ObjectId> {
   name: string;
@@ -48,7 +48,7 @@ const userSchema = new Schema<UserDoc>(
 
     emailVerified: { type: Boolean, default: false },
     emailOtpHash: { type: String, default: null, select: false },
-    emailOtpPurpose: { type: String, enum: ['verify', 'login'], default: null, select: false },
+    emailOtpPurpose: { type: String, enum: ['verify', 'login', 'reset'], default: null, select: false },
     emailOtpExpiresAt: { type: Date, default: null, select: false },
     emailOtpAttempts: { type: Number, default: 0, select: false },
     emailOtpLastSentAt: { type: Date, default: null, select: false },

@@ -76,6 +76,25 @@ export function disableMfa(password: string) {
   return post<{ mfaEnabled: boolean }>('/api/auth/mfa/disable', { password }, true);
 }
 
+export type ResetMethod = 'email' | 'mfa';
+
+export function forgotPassword(email: string) {
+  return post<{ email: string; methods: ResetMethod[] }>('/api/auth/forgot-password', { email });
+}
+
+export function sendResetOtp(email: string) {
+  return post<{ email: string }>('/api/auth/forgot-password/send-otp', { email });
+}
+
+export function resetPassword(payload: {
+  email: string;
+  method: ResetMethod;
+  code: string;
+  newPassword: string;
+}) {
+  return post<Record<string, never>>('/api/auth/reset-password', payload);
+}
+
 export function logout() {
   return post<Record<string, never>>('/api/auth/logout', {}, true).catch(() => undefined);
 }

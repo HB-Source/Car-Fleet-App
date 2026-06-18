@@ -285,6 +285,84 @@ export async function verifyMfaLogin(
   return buildSession(user);
 }
 
+export type ResetMethod = 'email' | 'mfa';
+
+/** Which reset factors are available for an account (email always; MFA if on). */
+export async function getResetMethods(emailRaw: string): Promise<ResetMethod[]> {
+  const user = await User.findOne({ email: emailRaw.toLowerCase() });
+  // For unknown/inactive accounts, return the generic set to avoid enumeration.
+  if (!user || !user.active) return ['email'];
+  return user.mfaEnabled ? ['email', 'mfa'] : ['email'];
+}
+
+/** Email a password-reset OTP. Silent when the account doesn't exist. */
+export async function sendResetOtp(emailRaw: string): Promise<void> {
+  const user = await User.findOne({ email: emailRaw.toLowerCase() }).select(OTP_SELECT);
+  if (!user || !user.active) return;
+  await issueAndSendOtp(user, 'reset');
+}
+
+export async function resetPassword(
+  emailRaw: string,
+  method: ResetMethod,
+  code: string,
+  newPassword: string,
+): Promise<void> {
+  const user = await User.findOne({ email: emailRaw.toLowerCase() }).select(
+    `+password_hash +mfaSecret +mfaBackupCodesHash ${OTP_SELECT}`,
+  );
+  if (!user || !user.active) {
+    throw ApiError.badRequest('Invalid or expired reset request', 'reset_invalid');
+  }
+
+  if (method === 'email') {
+    if (
+      !user.emailOtpHash ||
+      user.emailOtpPurpose !== 'reset' ||
+      !user.emailOtpExpiresAt ||
+      user.emailOtpExpiresAt.getTime() < Date.now()
+    ) {
+      throw ApiError.badRequest('This reset code has expired. Request a new one.', 'otp_expired');
+    }
+    if (user.emailOtpAttempts >= OTP_MAX_ATTEMPTS) {
+      user.emailOtpHash = null;
+      await user.save();
+      throw ApiError.badRequest('Too many attempts. Request a new code.', 'otp_attempts');
+    }
+    if (!(await verifyOtpHash(code, user.emailOtpHash))) {
+      user.emailOtpAttempts += 1;
+      await user.save();
+      throw ApiError.badRequest('Incorrect code. Please try again.', 'otp_invalid');
+    }
+  } else {
+    // method === 'mfa'
+    if (!user.mfaEnabled || !user.mfaSecret) {
+      throw ApiError.badRequest('MFA is not enabled for this account', 'mfa_not_enabled');
+    }
+    let ok = verifyTotp(code, user.mfaSecret);
+    if (!ok) {
+      const idx = matchBackupCode(code, user.mfaBackupCodesHash);
+      if (idx >= 0) {
+        user.mfaBackupCodesHash.splice(idx, 1); // single-use
+        ok = true;
+      }
+    }
+    if (!ok) {
+      throw ApiError.unauthorized('Incorrect authentication code', 'mfa_invalid');
+    }
+  }
+
+  // Factor verified — set the new password and clear transient auth state.
+  user.password_hash = await hashPassword(newPassword);
+  user.emailOtpHash = null;
+  user.emailOtpPurpose = null;
+  user.emailOtpExpiresAt = null;
+  user.emailOtpAttempts = 0;
+  user.failedLoginAttempts = 0;
+  user.accountLockedUntil = null;
+  await user.save();
+}
+
 export async function disableMfa(userId: string, password: string): Promise<void> {
   const user = await User.findById(userId).select(
     '+password_hash +mfaSecret +mfaBackupCodesHash +mfaPending',

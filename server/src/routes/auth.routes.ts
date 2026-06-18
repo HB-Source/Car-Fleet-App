@@ -11,6 +11,8 @@ import {
   mfaVerifySchema,
   mfaDisableSchema,
   refreshSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
 } from '../schemas/auth.schema.js';
 import * as authService from '../services/auth.service.js';
 import { serializeUser } from '../utils/serialize.js';
@@ -123,6 +125,47 @@ authRouter.post('/refresh', validateBody(refreshSchema), async (req, res) => {
     'Session refreshed.',
   );
 });
+
+// --- Password reset ---------------------------------------------------------
+
+// Returns the available verification methods for an account (email always,
+// plus 'mfa' when an authenticator is enabled).
+authRouter.post(
+  '/forgot-password',
+  authRateLimiter,
+  validateBody(forgotPasswordSchema),
+  async (req, res) => {
+    const methods = await authService.getResetMethods(req.body.email);
+    sendSuccess(res, { email: req.body.email, methods }, 'Choose how to verify your identity.');
+  },
+);
+
+// Emails a reset OTP (used when the chosen method is 'email').
+authRouter.post(
+  '/forgot-password/send-otp',
+  otpRateLimiter,
+  validateBody(forgotPasswordSchema),
+  async (req, res) => {
+    await authService.sendResetOtp(req.body.email);
+    sendSuccess(res, { email: req.body.email }, 'If an account exists, a reset code has been sent.');
+  },
+);
+
+// Verifies the chosen factor (email OTP or MFA code/backup) and sets a new password.
+authRouter.post(
+  '/reset-password',
+  authRateLimiter,
+  validateBody(resetPasswordSchema),
+  async (req, res) => {
+    await authService.resetPassword(
+      req.body.email,
+      req.body.method,
+      req.body.code,
+      req.body.newPassword,
+    );
+    sendSuccess(res, {}, 'Your password has been reset. Please sign in.');
+  },
+);
 
 authRouter.post('/logout', (_req, res) => {
   // Stateless JWTs: the client discards its tokens. Endpoint provided for
