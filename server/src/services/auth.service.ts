@@ -40,6 +40,7 @@ export type SessionResult =
 
 export type LoginResult =
   | { kind: 'email_verification'; email: string }
+  | { kind: 'mfa_required'; email: string; mfaToken: string }
   | { kind: 'otp_sent'; email: string };
 
 /** Generate, hash, store and email a fresh OTP, enforcing the resend cooldown. */
@@ -136,6 +137,18 @@ export async function login(input: LoginInput): Promise<LoginResult> {
     return { kind: 'email_verification', email: user.email };
   }
 
+  // When an authenticator is set up, it replaces the email OTP as the second
+  // factor: go straight to the MFA challenge (no login code is emailed).
+  if (user.mfaEnabled) {
+    await user.save(); // persist the failed-attempt reset
+    return {
+      kind: 'mfa_required',
+      email: user.email,
+      mfaToken: signMfaChallengeToken(user._id.toString()),
+    };
+  }
+
+  // No MFA: fall back to an emailed one-time login code.
   await issueAndSendOtp(user, 'login');
   return { kind: 'otp_sent', email: user.email };
 }

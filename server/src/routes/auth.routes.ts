@@ -38,6 +38,14 @@ authRouter.post('/login', authRateLimiter, validateBody(loginSchema), async (req
     );
     return;
   }
+  if (result.kind === 'mfa_required') {
+    sendSuccess(
+      res,
+      { email: result.email, requiresMfa: true, mfaToken: result.mfaToken },
+      'Enter the code from your authenticator app.',
+    );
+    return;
+  }
   sendSuccess(
     res,
     { email: result.email, requiresOtp: true },

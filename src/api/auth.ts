@@ -20,6 +20,8 @@ export interface LoginResponse {
   email: string;
   requiresEmailVerification?: boolean;
   requiresOtp?: boolean;
+  requiresMfa?: boolean;
+  mfaToken?: string;
 }
 
 export interface VerifyOtpResponse {

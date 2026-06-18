@@ -98,10 +98,12 @@ FleetPilot uses **email-OTP login with optional TOTP MFA**:
 
 1. **Register** with name + email + password → a 6-digit code is emailed (via Resend).
 2. **Verify email** with the code → email is confirmed and you're signed in (the verification doubles as the first login).
-3. **Subsequent logins**: email + password → a fresh 6-digit login code is emailed → enter it to sign in.
-4. **Optional MFA**: enable an authenticator app (Google/Microsoft Authenticator, Authy, 1Password) from Settings. When enabled, login requires the email OTP **and** a TOTP code (or a single-use backup code).
+3. **Subsequent logins**: email + password, then the second factor:
+   - **MFA enabled** → enter your authenticator (TOTP) code, or a backup code. No email code is sent.
+   - **MFA not enabled** → a fresh 6-digit login code is emailed; enter it to sign in.
+4. **Optional MFA**: enable an authenticator app (Google/Microsoft Authenticator, Authy, 1Password) from Settings. Enabling it **replaces** the emailed login code with a TOTP code (with single-use backup codes for recovery).
 
-Tokens: a short-lived **access token (15m)** plus a **refresh token (7d)**, stored in `localStorage` and sent as `Authorization: Bearer <token>`. The client transparently refreshes expired access tokens. OTP and backup codes are bcrypt-hashed at rest; accounts lock for 15 min after 5 failed password attempts; login/OTP endpoints are rate-limited.
+Tokens: a short-lived **access token (15m)** plus a **refresh token (7d)**, stored in `localStorage` and sent as `Authorization: Bearer <token>`. The client transparently refreshes expired access tokens. Email OTPs are bcrypt-hashed and backup codes SHA-256-hashed at rest; accounts lock for 15 min after 5 failed password attempts; login/OTP endpoints are rate-limited.
 
 ### Auth endpoints
 

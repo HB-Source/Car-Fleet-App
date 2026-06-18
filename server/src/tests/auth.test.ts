@@ -146,17 +146,13 @@ describe('MFA (TOTP)', () => {
       .send({ code: authenticator.generate(secret) });
     expect(enable.status).toBe(200);
 
-    // Next login now requires MFA after the email OTP.
+    // Next login goes straight to MFA — no email OTP is sent.
     const login = await request(app)
       .post('/api/auth/login')
       .send({ email: 'mfa@test.dev', password: 'Password123!' });
-    expect(login.body.data.requiresOtp).toBe(true);
-    const otp = lastOtpFor('mfa@test.dev')!;
-    const otpStep = await request(app)
-      .post('/api/auth/verify-email-otp')
-      .send({ email: 'mfa@test.dev', code: otp });
-    expect(otpStep.body.data.mfaRequired).toBe(true);
-    const mfaToken = otpStep.body.data.mfaToken as string;
+    expect(login.body.data.requiresMfa).toBe(true);
+    expect(login.body.data.requiresOtp).toBeUndefined();
+    const mfaToken = login.body.data.mfaToken as string;
 
     const totpLogin = await request(app)
       .post('/api/auth/mfa/verify')
@@ -165,14 +161,13 @@ describe('MFA (TOTP)', () => {
     expect(totpLogin.body.data.accessToken).toBeTruthy();
 
     // A backup code also works (single-use) on a fresh challenge.
-    await request(app).post('/api/auth/login').send({ email: 'mfa@test.dev', password: 'Password123!' });
-    const otp2 = lastOtpFor('mfa@test.dev')!;
-    const step2 = await request(app)
-      .post('/api/auth/verify-email-otp')
-      .send({ email: 'mfa@test.dev', code: otp2 });
+    const login2 = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'mfa@test.dev', password: 'Password123!' });
+    expect(login2.body.data.requiresMfa).toBe(true);
     const backupLogin = await request(app)
       .post('/api/auth/mfa/verify')
-      .send({ mfaToken: step2.body.data.mfaToken, code: backupCode });
+      .send({ mfaToken: login2.body.data.mfaToken, code: backupCode });
     expect(backupLogin.status).toBe(200);
   });
 });

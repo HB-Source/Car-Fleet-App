@@ -21,6 +21,11 @@ export function Login() {
     setError(null);
     try {
       const res = await beginLogin(email.trim(), password);
+      if (res.requiresMfa) {
+        // Authenticator is set up — go straight to the MFA code, no email OTP.
+        navigate('/verify-mfa', { state: { mfaToken: res.mfaToken }, replace: true });
+        return;
+      }
       const mode = res.requiresEmailVerification ? 'verify' : 'login';
       navigate('/verify-otp', { state: { email: res.email, mode }, replace: true });
     } catch (err) {
