@@ -215,7 +215,7 @@ export async function setupMfa(userId: string): Promise<MfaSetupResult> {
 
   user.mfaSecret = setup.secret;
   user.mfaPending = true;
-  user.mfaBackupCodesHash = await hashBackupCodes(backupCodes);
+  user.mfaBackupCodesHash = hashBackupCodes(backupCodes);
   await user.save();
 
   // Backup codes are returned exactly once, here.
@@ -257,7 +257,7 @@ export async function verifyMfaLogin(
 
   let ok = verifyTotp(code, user.mfaSecret);
   if (!ok) {
-    const idx = await matchBackupCode(code, user.mfaBackupCodesHash);
+    const idx = matchBackupCode(code, user.mfaBackupCodesHash);
     if (idx >= 0) {
       user.mfaBackupCodesHash.splice(idx, 1); // single-use
       ok = true;
