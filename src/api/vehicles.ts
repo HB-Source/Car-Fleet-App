@@ -1,8 +1,75 @@
 import { apiRequest, ApiRequestError, isApiConfigured } from './client';
 import { loadDemoVehicles, saveDemoVehicles } from '../lib/demoData';
-import type { Vehicle, VehicleHistoryEntry, VehicleUpdate } from '../types/vehicle';
+import type {
+  Vehicle,
+  VehicleEvent,
+  VehicleEventCategory,
+  VehicleHistoryEntry,
+  VehicleUpdate,
+} from '../types/vehicle';
 
 const POLL_INTERVAL_MS = 15_000;
+
+/** Create a vehicle (admin/manager). Demo mode appends to local storage. */
+export async function createVehicle(input: Partial<Vehicle>): Promise<Vehicle> {
+  if (!isApiConfigured) {
+    await new Promise((r) => setTimeout(r, 300));
+    const vehicles = loadDemoVehicles();
+    const now = new Date().toISOString();
+    const vehicle = {
+      id: `local-${Date.now()}`,
+      status: 'available',
+      driver: 'Unassigned',
+      mileage: 0,
+      location_id: '',
+      latitude: null,
+      longitude: null,
+      maintenance_notes: null,
+      registration_date: null,
+      active: true,
+      last_updated: now,
+      ...input,
+    } as Vehicle;
+    vehicles.unshift(vehicle);
+    saveDemoVehicles(vehicles);
+    return vehicle;
+  }
+  // The server derives `driver` from the assigned-driver reference and owns id/timestamps.
+  const payload: Record<string, unknown> = { ...input };
+  delete payload.driver;
+  delete payload.id;
+  delete payload.last_updated;
+  const res = await apiRequest<{ vehicle: Vehicle }>('/api/vehicles', {
+    method: 'POST',
+    body: payload,
+  });
+  return res.vehicle;
+}
+
+export async function fetchVehicleEvents(id: string): Promise<VehicleEvent[]> {
+  if (!isApiConfigured) return [];
+  const res = await apiRequest<{ data: VehicleEvent[] }>(`/api/vehicles/${id}/events`);
+  return res.data;
+}
+
+export async function addVehicleEvent(
+  id: string,
+  input: { category: VehicleEventCategory; title: string; notes?: string; event_date: string },
+): Promise<VehicleEvent> {
+  const res = await apiRequest<{ event: VehicleEvent }>(`/api/vehicles/${id}/events`, {
+    method: 'POST',
+    body: input,
+  });
+  return res.event;
+}
+
+export async function deleteVehicleEvent(id: string, eventId: string): Promise<void> {
+  await apiRequest<void>(`/api/vehicles/${id}/events/${eventId}`, { method: 'DELETE' });
+}
+
+export async function fetchVehicleQr(id: string): Promise<{ payload: string; qrCodeDataUrl: string }> {
+  return apiRequest<{ payload: string; qrCodeDataUrl: string }>(`/api/vehicles/${id}/qr`);
+}
 
 export async function fetchVehicles(): Promise<Vehicle[]> {
   if (!isApiConfigured) {

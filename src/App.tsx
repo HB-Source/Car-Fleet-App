@@ -11,6 +11,7 @@ import { Settings } from './pages/Settings';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { Users } from './pages/Users';
+import { AddVehicle } from './pages/AddVehicle';
 import { EmailOtpVerification } from './pages/EmailOtpVerification';
 import { MfaVerification } from './pages/MfaVerification';
 import { MfaSetup } from './pages/MfaSetup';
@@ -63,6 +64,14 @@ function Shell() {
             element={
               <RequireAuth>
                 <VehicleDetail />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/add"
+            element={
+              <RequireAuth>
+                <AddVehicle />
               </RequireAuth>
             }
           />

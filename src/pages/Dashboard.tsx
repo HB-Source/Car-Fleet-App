@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, QrCode, CarFront, SearchX, ArrowDownUp } from 'lucide-react';
+import { Search, QrCode, CarFront, SearchX, ArrowDownUp, Plus } from 'lucide-react';
 import { useVehicles } from '../hooks/useVehicles';
 import { filterVehicles, type SortOrder, type StatusFilter } from '../utils/filterVehicles';
 import { STATUS_LABELS, VEHICLE_STATUSES } from '../types/vehicle';
@@ -134,13 +134,13 @@ export function Dashboard() {
         </div>
       </PullToRefresh>
 
-      {/* Floating action button → QR onboarding */}
+      {/* Floating action button → Add vehicle (manual or QR) */}
       <Link
-        to="/onboard"
-        aria-label="Onboard vehicle via QR code"
+        to="/add"
+        aria-label="Add a vehicle"
         className="fixed bottom-24 right-5 z-[950] flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-600 to-purple-600 text-white shadow-xl shadow-brand-500/40 transition-transform active:scale-90"
       >
-        <QrCode size={24} />
+        <Plus size={26} />
       </Link>
     </div>
   );

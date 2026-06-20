@@ -6,13 +6,14 @@ import { requireMfaVerified } from '../middleware/requireMfaVerified.js';
 import { validateBody } from '../middleware/validate.js';
 import {
   createVehicleSchema,
+  createEventSchema,
   listVehiclesQuerySchema,
   onboardSchema,
   updateVehicleSchema,
 } from '../schemas/vehicle.schema.js';
 import * as vehiclesService from '../services/vehicles.service.js';
 import { ApiError } from '../utils/ApiError.js';
-import { serializeHistory, serializeVehicle } from '../utils/serialize.js';
+import { serializeEvent, serializeHistory, serializeVehicle } from '../utils/serialize.js';
 
 export const vehiclesRouter = Router();
 
@@ -66,4 +67,30 @@ vehiclesRouter.get('/:id/history', async (req, res) => {
   const limit = Math.min(100, Math.max(1, Number.parseInt(String(req.query.limit ?? '50'), 10) || 50));
   const { entries, total } = await vehiclesService.getVehicleHistory(String(req.params.id), page, limit);
   res.json({ data: entries.map(serializeHistory), meta: { page, limit, total } });
+});
+
+// --- Vehicle events (manual passport history) ---
+vehiclesRouter.get('/:id/events', async (req, res) => {
+  const events = await vehiclesService.listVehicleEvents(String(req.params.id));
+  res.json({ data: events.map(serializeEvent) });
+});
+
+vehiclesRouter.post('/:id/events', validateBody(createEventSchema), async (req, res) => {
+  const event = await vehiclesService.addVehicleEvent(String(req.params.id), req.body, req.user!);
+  res.status(201).json({ event: serializeEvent(event) });
+});
+
+vehiclesRouter.delete('/:id/events/:eventId', async (req, res) => {
+  await vehiclesService.deleteVehicleEvent(
+    String(req.params.id),
+    String(req.params.eventId),
+    req.user!,
+  );
+  res.status(204).end();
+});
+
+// --- Per-vehicle QR code ---
+vehiclesRouter.get('/:id/qr', async (req, res) => {
+  const qr = await vehiclesService.getVehicleQr(String(req.params.id));
+  res.json(qr);
 });

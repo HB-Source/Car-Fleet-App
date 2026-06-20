@@ -200,3 +200,72 @@ describe('vehicle history', () => {
     expect(res.body.data).toHaveLength(0);
   });
 });
+
+describe('digital passport extensions', () => {
+  it('stores and returns extended vehicle details + location timestamp', async () => {
+    const res = await request(app)
+      .post('/api/vehicles')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        vehicle_name: 'BMW 3 Series',
+        plate_number: 'AB12-CDE',
+        qr_code_id: 'QR-BMW-1',
+        make: 'BMW',
+        car_model: '3 Series',
+        year: 2021,
+        color: 'Black',
+        fuel_type: 'Petrol',
+        transmission: 'Automatic',
+        latitude: 51.5,
+        longitude: -0.12,
+        location_note: 'Depot A',
+      });
+    expect(res.status).toBe(201);
+    expect(res.body.vehicle.make).toBe('BMW');
+    expect(res.body.vehicle.car_model).toBe('3 Series');
+    expect(res.body.vehicle.year).toBe(2021);
+    expect(res.body.vehicle.location_note).toBe('Depot A');
+    expect(res.body.vehicle.location_updated_at).toBeTruthy();
+  });
+
+  it('manages history events with role checks', async () => {
+    const { body } = await createVehicle();
+    const id = body.vehicle.id;
+
+    const created = await request(app)
+      .post(`/api/vehicles/${id}/events`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ category: 'service', title: 'Oil + filter change', event_date: '2026-06-12' });
+    expect(created.status).toBe(201);
+    expect(created.body.event.category).toBe('service');
+    expect(created.body.event.created_by).toBe('Test Admin');
+
+    const list = await request(app)
+      .get(`/api/vehicles/${id}/events`)
+      .set('Authorization', `Bearer ${driverToken}`);
+    expect(list.status).toBe(200);
+    expect(list.body.data).toHaveLength(1);
+
+    // A driver who isn't assigned cannot add events.
+    const forbidden = await request(app)
+      .post(`/api/vehicles/${id}/events`)
+      .set('Authorization', `Bearer ${driverToken}`)
+      .send({ category: 'note', title: 'nope', event_date: '2026-06-12' });
+    expect(forbidden.status).toBe(403);
+
+    const del = await request(app)
+      .delete(`/api/vehicles/${id}/events/${created.body.event.id}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(del.status).toBe(204);
+  });
+
+  it('generates a QR code data URL for a vehicle', async () => {
+    const { body } = await createVehicle({ qr_code_id: 'QR-PASS-1' });
+    const res = await request(app)
+      .get(`/api/vehicles/${body.vehicle.id}/qr`)
+      .set('Authorization', `Bearer ${driverToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.payload).toBe('QR-PASS-1');
+    expect(res.body.qrCodeDataUrl).toMatch(/^data:image\/png/);
+  });
+});
